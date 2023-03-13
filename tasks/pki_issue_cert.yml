@@ -1,0 +1,21 @@
+---
+- block:
+
+    - name: Generate private key for '{{ item.name }}'
+      command: "openssl genrsa -out '{{ item.name }}.key' 2048"
+      args:
+        chdir: "{{ openvpn_pki_dir }}/private"
+
+    - name: Create sign request for '{{ item.name }}'
+      command: "openssl req -config openssl.cnf -key 'private/{{ item.name }}.key' -new -sha256 -out 'csr/{{ item.name }}.csr' -subj '/OU={{ openvpn_server_name }} {{ ansible_date_time.iso8601 }}/CN={{ item.name }}'"
+      args:
+        chdir: "{{ openvpn_pki_dir }}"
+
+    - name: Sign certificate for '{{ item.name }}'
+      command: "openssl ca -batch -config openssl.cnf -extensions user_cert -days {{ item.days | default(openvpn_c_days) }} -notext -md sha256 -in 'csr/{{ item.name }}.csr' -out 'certs/{{ item.name }}.pem'"
+      args:
+        chdir: "{{ openvpn_pki_dir }}"
+  when: item.name in openvpn_c_issue | union(openvpn_c_reissue)
+  tags:
+    - openvpn_clients
+...

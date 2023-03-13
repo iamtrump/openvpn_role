@@ -1,0 +1,38 @@
+---
+- name: Register CA certificate content
+  command: "cat {{ openvpn_pki_dir }}/certs/CA.pem"
+  register: openvpn_ca_content
+  changed_when: False
+  tags:
+    - openvpn_clients
+
+- name: Register '{{ item }}' certificate content
+  command: "cat '{{ openvpn_pki_dir }}/certs/{{ item }}.pem'"
+  register: openvpn_c_content
+  changed_when: False
+  tags:
+    - openvpn_clients
+
+- name: Register '{{ item }}' key content
+  command: "cat '{{ openvpn_pki_dir }}/private/{{ item }}.key'"
+  register: openvpn_key_content
+  changed_when: False
+  tags:
+    - openvpn_clients
+
+- name: Ensure '{{ item }}' profile exists
+  template:
+    src: "{{ role_path }}/files/etc/openvpn/client.ovpn.j2"
+    dest: "{{ openvpn_config_dir }}/client_profiles/{{ item }}.ovpn"
+    mode: 0640
+  tags:
+    - openvpn_clients
+
+- name: Ensure '{{ item }}' profile exists locally
+  fetch:
+    src: "{{ openvpn_config_dir }}/client_profiles/{{ item }}.ovpn"
+    dest: "{{ openvpn_local_profiles_dir }}/{{ item }}.ovpn"
+    flat: yes
+  tags:
+    - openvpn_clients
+...

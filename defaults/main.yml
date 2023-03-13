@@ -1,0 +1,28 @@
+---
+# Program
+openvpn_user: openvpn
+openvpn_group: openvpn
+openvpn_server_name: tdz-vpn-server
+openvpn_log_dir: /var/log/openvpn
+
+# Network
+openvpn_address: "{{ ansible_default_ipv4.address }}"
+openvpn_proto: udp
+openvpn_port: 161
+openvpn_network: 192.168.89.0/24
+openvpn_push_dns:
+  - 8.8.8.8
+  - 8.8.4.4
+
+# PKI
+openvpn_pki_dir: /etc/pki/openvpn
+openvpn_ca_name: tdz-openvpn-ca
+openvpn_ca_days: 3655
+openvpn_ca_days_min: 30
+openvpn_c_days: 370
+openvpn_c_days_min: 7
+
+# Clients
+openvpn_local_profiles_dir: "{{ playbook_dir }}/client-profiles-{{ openvpn_server_name | replace(' ', '_') | lower }}"
+openvpn_clients: []
+...

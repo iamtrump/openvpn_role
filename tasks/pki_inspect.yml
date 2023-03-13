@@ -1,0 +1,205 @@
+---
+- name: Init default facts
+  set_fact:
+    openvpn_ca_issue: False
+    openvpn_srv_issue: False
+    openvpn_c_issue: []
+    openvpn_c_reissue: []
+    openvpn_c_revoke: []
+    openvpn_c_ok: []
+  tags:
+    - openvpn_pki_info
+    - openvpn_clients
+
+- name: Get CA certificate file stat
+  stat:
+    path: "{{ openvpn_pki_dir }}/certs/CA.pem"
+  register: openvpn_ca_stat
+  tags:
+    - openvpn_pki_info
+    - openvpn_clients
+
+- name: Check CA certificate expiration
+  command: "openssl x509 -in CA.pem -noout -checkend {{ openvpn_ca_days_min | int * 24 * 60 * 60 }}"
+  args:
+    chdir: "{{ openvpn_pki_dir }}/certs"
+  register: openvpn_ca_expiration
+  changed_when: False
+  failed_when:
+    - openvpn_ca_expiration.rc != 0
+    - openvpn_ca_expiration.rc != 1
+  when: openvpn_ca_stat.stat.exists == True
+  tags:
+    - openvpn_pki_info
+    - openvpn_clients
+
+- name: Set 'openvpn_ca_issue', 'openvpn_srv_issue'  and 'openvpn_c_issue' due to CA certificate not exist
+  set_fact:
+    openvpn_ca_issue: True
+    openvpn_srv_issue: True
+    openvpn_c_issue: "{{ openvpn_clients | map(attribute='name') }}"
+  when: openvpn_ca_stat.stat.exists == False
+  tags:
+    - openvpn_pki_info
+    - openvpn_clients
+
+- name: Set 'openvpn_ca_reissue', 'openvpn_srv_issue'  and 'openvpn_c_issue' due to CA certificate will expired soon
+  set_fact:
+    openvpn_ca_issue: True
+    openvpn_srv_issue: True
+    openvpn_c_issue: "{{ penvpn_clients | map(attribute='name') }}"
+  when:
+    - openvpn_ca_stat.stat.exists == True
+    - openvpn_ca_expiration.rc == 1
+  tags:
+    - openvpn_pki_info
+    - openvpn_clients
+
+- name: Get server certificate file stat
+  stat:
+    path: "{{ openvpn_pki_dir }}/certs/SRV.pem"
+  register: openvpn_srv_stat
+  when: openvpn_ca_issue == False
+  tags:
+    - openvpn_pki_info
+    - openvpn_clients
+
+- name: Check server certificate expiration
+  command: "openssl x509 -in SRV.pem -noout -checkend {{ openvpn_c_days_min | int * 24 * 60 * 60 }}"
+  args:
+    chdir: "{{ openvpn_pki_dir }}/certs"
+  register: openvpn_srv_expiration
+  changed_when: False
+  failed_when:
+    - openvpn_srv_expiration.rc != 0
+    - openvpn_srv_expiration.rc != 1
+  when:
+    - openvpn_ca_issue == False
+    - openvpn_srv_stat.stat.exists == True
+  tags:
+    - openvpn_pki_info
+    - openvpn_clients
+
+- name: Set 'openvpn_srv_issue' due to server certificate not exist
+  set_fact:
+    openvpn_srv_issue: True
+  when:
+    - openvpn_ca_issue == False
+    - openvpn_srv_stat.stat.exists == False
+  tags:
+    - openvpn_pki_info
+    - openvpn_clients
+
+- name: Set 'openvpn_srv_issue' due to server certificate will expired soon
+  set_fact:
+    openvpn_srv_issue: True
+  when:
+    - openvpn_ca_issue == False
+    - openvpn_srv_expiration.rc == 1
+  tags:
+    - openvpn_pki_info
+    - openvpn_clients
+
+
+- name: Get issued certificates list
+  find:
+    paths: "{{ openvpn_pki_dir }}/certs"
+    file_type: file
+    patterns: "*.pem"
+    excludes:
+      - CA.pem
+      - SRV.pem
+  register: openvpn_c_files
+  when: openvpn_ca_issue == False
+  tags:
+    - openvpn_pki_info
+    - openvpn_clients
+
+- name: Check if certificates expire soon
+  shell: "openssl x509 -in '{{ item }}' -noout -checkend {{ openvpn_c_days_min | int * 24 * 60 * 60 }} > /dev/null || basename {{ item }} | sed 's/[.]pem$//'"
+  args:
+    chdir: "{{ openvpn_pki_dir }}/certs"
+  register: openvpn_c_expired
+  changed_when: False
+  loop: "{{ openvpn_c_files.files | map(attribute='path') | sort }}"
+  when: 
+    - openvpn_ca_issue == False
+    - openvpn_c_files.files | length > 0
+  tags:
+    - openvpn_pki_info
+    - openvpn_clients
+
+- name: Set 'openvpn_c_revoke' due to removed from clients list
+  set_fact:
+    openvpn_c_revoke: "{{ openvpn_c_files.files | map(attribute='path') | map('regex_replace', '[.]pem$', '') | map('replace', openvpn_pki_dir + '/certs/', '') | difference(openvpn_clients | map(attribute='name')) | sort }}"
+  when: 
+    - openvpn_ca_issue == False
+    - openvpn_c_files.files | length > 0
+  tags:
+    - openvpn_pki_info
+    - openvpn_clients
+
+- name: Set 'openvpn_c_issue'
+  set_fact:
+    openvpn_c_issue: "{{ openvpn_clients | map(attribute='name') | difference(openvpn_c_files.files | map(attribute='path') | map('basename') | map('regex_replace', '[.]pem$', '')) | sort }}"
+  when: 
+    - openvpn_ca_issue == False
+    - openvpn_c_files.files | length > 0
+  tags:
+    - openvpn_pki_info
+    - openvpn_clients
+
+- name: Set 'openvpn_c_reissue'
+  set_fact:
+    openvpn_c_reissue: "{{ openvpn_clients | map(attribute='name') | intersect(openvpn_c_expired.results | map(attribute='stdout')) | sort }}"
+  when:
+    - openvpn_ca_issue == False
+    - openvpn_c_expired.results | length > 0
+  tags:
+    - openvpn_pki_info
+    - openvpn_clients
+
+- name: Set 'openvpn_c_ok'
+  set_fact:
+    openvpn_c_ok: "{{ openvpn_clients | map(attribute='name') | difference(openvpn_c_expired.results | map(attribute='stdout')) | intersect(openvpn_c_files.files | map(attribute='path') | map('basename') | map('regex_replace', '[.]pem$', '')) | sort }}"
+  when:
+    - openvpn_ca_issue == False
+    - openvpn_c_files is defined
+    - openvpn_c_expired is defined
+  tags:
+    - openvpn_pki_info
+    - openvpn_clients
+
+- name: Get expiration date for OK certificates
+  command: "openssl x509 -in '{{ item }}.pem' -noout -enddate"
+  args:
+    chdir: "{{ openvpn_pki_dir }}/certs"
+  register: openvpn_c_enddates
+  changed_when: False
+  loop: "{{ openvpn_c_ok }}"
+  when:
+    - openvpn_ca_issue == False
+  tags:
+    - openvpn_pki_info
+    - openvpn_clients
+
+- name: Show summary
+  pause:
+    seconds: 20
+    prompt: |
+      Summary:
+
+      — Need to issue CA certificate: {{ openvpn_ca_issue }}
+      - Need to issue server certificate: {{ openvpn_srv_issue }}
+      — OK clients ({{ openvpn_c_ok | length }}):
+      {% for cert in openvpn_c_ok | zip(openvpn_c_enddates.results | map(attribute='stdout')) %}
+        {{ '%-15s %s' | format(cert.0, cert.1 | replace('notAfter=', '')) }}
+      {% endfor %}
+      — Need to issue new client certificates ({{ openvpn_c_issue | length }}): {{ openvpn_c_issue | join(', ') }}
+      — Need to reissue existing client certificates ({{ openvpn_c_reissue | length }}): {{ openvpn_c_reissue | join(', ') }}
+      — Need to revoke client certificates ({{ openvpn_c_revoke | length }}): {{ openvpn_c_revoke | join(', ') }}
+
+  tags:
+    - openvpn_pki_info
+    - openvpn_clients
+...

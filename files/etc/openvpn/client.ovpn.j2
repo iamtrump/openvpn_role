@@ -1,0 +1,24 @@
+client
+dev tun
+tun-mtu 1500
+proto {{ openvpn_proto }}
+remote {{ openvpn_address }} {{ openvpn_port }}
+route {{ openvpn_address }} 255.255.255.255 net_gateway
+resolv-retry infinite
+nobind
+persist-key
+persist-tun
+auth-nocache
+<ca>
+{{ openvpn_ca_content.stdout }}
+</ca>
+<cert>
+{{ openvpn_c_content.stdout }}
+</cert>
+<key>
+{{ openvpn_key_content.stdout }}
+</key>
+remote-cert-tls server
+key-direction 1
+cipher AES-256-CBC
+verb 3

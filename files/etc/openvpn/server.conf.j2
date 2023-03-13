@@ -1,0 +1,33 @@
+port {{ openvpn_port }}
+proto {{ openvpn_proto }}
+dev tun
+tun-mtu 1500
+ca {{ openvpn_pki_dir }}/certs/CA.pem
+cert {{ openvpn_pki_dir }}/certs/SRV.pem
+key {{ openvpn_pki_dir }}/private/SRV.key
+crl-verify {{ openvpn_pki_dir }}/crl/crl.pem
+dh {{ openvpn_pki_dir }}/dhparam.pem
+topology subnet
+server {{ openvpn_network | ansible.utils.ipaddr('network') }} {{ openvpn_network | ansible.utils.ipaddr('netmask') }}
+ifconfig-pool-persist {{ openvpn_server_name | replace(' ', '_') | lower }}.ipp.txt
+push "redirect-gateway def1 bypass-dhcp"
+{% for dns in openvpn_push_dns %}
+push "dhcp-option DNS {{ dns }}"
+{% endfor %}
+client-config-dir {{ openvpn_config_dir }}/client_configs
+client-to-client
+keepalive 10 120
+reneg-sec 600
+tran-window 180
+cipher AES-256-CBC
+user {{ openvpn_user }}
+group {{ openvpn_user }}
+persist-key
+persist-tun
+{% if openvpn_proto == 'udp' %}
+explicit-exit-notify 1
+{% endif %}
+status {{ openvpn_log_dir }}/{{ openvpn_server_name | replace(' ', '_') | lower }}.status
+status-version 2
+log {{ openvpn_log_dir }}/{{ openvpn_server_name | replace(' ', '_') | lower }}.log
+verb 3

@@ -1,0 +1,12 @@
+---
+- name: Generate CRL
+  command: "openssl ca -batch -config openssl.cnf -gencrl -out crl/crl.pem"
+  args:
+    chdir: "{{ openvpn_pki_dir }}"
+
+- name: Restart OpenVPN
+  systemd:
+    name: "openvpn@{{ openvpn_server_name | replace(' ', '_') | lower }}"
+    state: restarted
+    daemon_reload: True
+...

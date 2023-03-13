@@ -1,0 +1,23 @@
+---
+- name: Inspect PKI and set facts
+  include_tasks: pki_inspect.yml
+  tags:
+    - openvpn_pki_info
+    - openvpn_clients
+
+- name: Install OpenVPN
+  include_tasks: openvpn_install.yml
+  tags:
+    - openvpn_setup
+
+- name: PKI
+  include_tasks: pki.yml
+  tags:
+    - openvpn_clients
+
+- name: Configure OpenVPN
+  include_tasks: openvpn_configure.yml
+  tags:
+    - openvpn_setup
+    - openvpn_clients
+...

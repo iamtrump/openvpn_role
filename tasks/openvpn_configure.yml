@@ -1,0 +1,107 @@
+---
+- name: Ensure OpenVPN directories exist
+  file:
+    path: "{{ item }}"
+    state: directory
+  loop:
+    - "{{ openvpn_config_dir }}/client_configs"
+    - "{{ openvpn_config_dir }}/client_profiles"
+    - "{{ openvpn_log_dir }}"
+    - /etc/systemd/system/openvpn@{{ openvpn_server_name | replace(' ', '_') | lower }}.service.d
+  tags:
+    - openvpn_setup
+    - openvpn_clients
+
+- name: Ensure OpenVPN server configuration file exists
+  template:
+    src: "{{ role_path }}/files/etc/openvpn/server.conf.j2"
+    dest: "{{ openvpn_config_dir }}/{{ openvpn_server_name | replace(' ', '_') | lower }}.conf"
+  notify:
+    - Restart OpenVPN
+  tags:
+    - openvpn_setup
+
+- name: Ensure OpenVPN client profile template exists
+  copy:
+    src: "{{ role_path }}/files/etc/openvpn/client.ovpn.j2"
+    dest: "{{ openvpn_config_dir }}/{{ openvpn_server_name | replace(' ', '_') | lower }}.client.ovpn.j2"
+  register: openvpn_profile_template
+  tags:
+    - openvpn_clients
+
+- name: Ensure OpenVPN client configuration files exist
+  template:
+    src: "{{ role_path }}/files/etc/openvpn/client.j2"
+    dest: "{{ openvpn_config_dir }}/client_configs/{{ item.name }}"
+    mode: 0644
+  loop: "{{ openvpn_clients | sort(attribute='name') }}"
+  loop_control:
+    label: "{{ item.name }}"
+  tags:
+    - openvpn_clients
+
+- name: Ensure systemd drop-in exists to configure iptables 
+  template:
+    src: "{{ role_path }}/files/etc/systemd/system/openvpn.service.d/iptables.conf.j2"
+    dest: "/etc/systemd/system/openvpn@{{ openvpn_server_name | replace(' ', '_') | lower }}.service.d/iptables.conf"
+  notify:
+    - Restart OpenVPN
+  tags:
+    - openvpn_setup
+
+- name: Remove unwanted OpenVPN client configuration files
+  file:
+    path: "{{ openvpn_config_dir }}/{{ item.1.dir }}/{{ item.0 }}{{ item.1.ext }}"
+    state: absent
+  loop: "{{ openvpn_c_revoke | sort | product([{ 'dir': 'client_configs', 'ext': '' }, { 'dir': 'client_profiles', 'ext': '.ovpn' }]) }}"
+  loop_control:
+    label: "{{ openvpn_config_dir }}/{{ item.1.dir }}/{{ item.0 }}{{ item.1.ext }}"
+  tags:
+    - openvpn_clients
+
+- name: Ensure IP forwarding enabled
+  sysctl:
+    name: net.ipv4.ip_forward
+    value: 1
+    reload: yes
+  tags:
+    - openvpn_setup
+
+- name: Ensure OpenVPN started and enabled
+  systemd:
+    name: "openvpn@{{ openvpn_server_name | replace(' ', '_') | lower }}"
+    state: started
+    enabled: True
+  tags:
+    - openvpn_setup
+
+- name: Create new OpenVPN client profiles
+  include_tasks: openvpn_create_profile.yml
+  loop: "{{ openvpn_c_issue | union(openvpn_c_reissue) | sort }}"
+  loop_control:
+    label: "{{ item }}"
+  tags:
+    - openvpn_clients
+
+- name: Recreate OpenVPN client profiles due to template changes
+  include_tasks: openvpn_create_profile.yml
+  loop: "{{ openvpn_clients | map(attribute='name') | difference(openvpn_c_issue) | difference(openvpn_c_reissue) | sort }}"
+  loop_control:
+    label: "{{ item }}"
+  when: openvpn_profile_template.changed == True
+  tags:
+    - openvpn_clients
+
+- name: Ensure correct permissions set
+  file:
+    path: "{{ item }}"
+    owner: "{{ openvpn_user }}"
+    group: "{{ openvpn_group }}"
+    recurse: True
+  loop:
+    - "{{ openvpn_config_dir }}"
+    - "{{ openvpn_log_dir }}"
+  tags:
+    - openvpn_setup
+    - openvpn_clients
+...

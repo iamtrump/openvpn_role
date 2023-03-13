@@ -1,0 +1,23 @@
+---
+- name: Revoke '{{ item }}'
+  command: "openssl ca -batch -config openssl.cnf -revoke 'certs/{{ item }}.pem'"
+  args:
+    chdir: "{{ openvpn_pki_dir }}"
+  notify:
+    - Generate CRL
+  tags:
+    - openvpn_clients
+
+- name: Remove key, csr and certificate for '{{ item }}'
+  file:
+    path: "{{ openvpn_pki_dir }}/{{ file }}"
+    state: absent
+  loop:
+    - "certs/{{ item }}.pem"
+    - "private/{{ item }}.key"
+    - "csr/{{ item }}.csr"
+  loop_control:
+    loop_var: file
+  tags:
+    - openvpn_clients
+...

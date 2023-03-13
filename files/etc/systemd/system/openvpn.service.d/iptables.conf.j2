@@ -1,0 +1,13 @@
+[Service]
+ExecStartPre=-iptables -t filter -A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
+ExecStartPre=-iptables -t filter -A FORWARD -i tun+ -s {{ openvpn_network }} -j ACCEPT
+ExecStartPre=-iptables -t filter -A INPUT -p {{ openvpn_proto }} --dport {{ openvpn_port }} -j ACCEPT
+ExecStartPre=-iptables -t filter -A INPUT -i tun+ -s {{ openvpn_network }} -p icmp -j ACCEPT
+ExecStartPre=-iptables -t nat -A POSTROUTING -s {{ openvpn_network }} -j MASQUERADE
+
+
+ExecStopPost=-iptables -t filter -D FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
+ExecStopPost=-iptables -t filter -D FORWARD -i tun+ -s {{ openvpn_network }} -j ACCEPT
+ExecStopPost=-iptables -t filter -D INPUT -p {{ openvpn_proto }} --dport {{ openvpn_port }} -j ACCEPT
+ExecStopPost=-iptables -t filter -D INPUT -i tun+ -s {{ openvpn_network }} -p icmp -j ACCEPT
+ExecStopPost=-iptables -t nat -D POSTROUTING -s {{ openvpn_network }} -j MASQUERADE

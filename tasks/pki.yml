@@ -1,0 +1,141 @@
+---
+- name: Clean PKI due to new CA certificate will be created
+  file:
+    path: "{{ openvpn_pki_dir }}"
+    state: absent
+  when: openvpn_ca_issue == True
+  tags:
+    - openvpn_clients
+
+- name: Ensure PKI directories exist
+  file:
+    path: "{{ openvpn_pki_dir }}/{{ item.name }}"
+    state: directory
+    mode: "{{ item.mode }}"
+  loop:
+    - { name: "", mode: 755 }
+    - { name: certs, mode: 755 }
+    - { name: crl, mode: 755 }
+    - { name: csr, mode: 755 }
+    - { name: newcerts, mode: 755 }
+    - { name: private, mode: 700 }
+  tags:
+    - openvpn_clients
+
+- name: Ensure certificate database exists
+  file:
+    path: "{{ openvpn_pki_dir }}/index.txt"
+    state: touch
+  changed_when: False
+  tags:
+    - openvpn_clients
+
+- name: Ensure serial seeded
+  shell: "openssl rand -hex 16 > serial"
+  args:
+    chdir: "{{ openvpn_pki_dir }}"
+    creates: serial
+  tags:
+    - openvpn_clients
+
+- name: Ensure crlnumber seeded
+  shell: "echo 1000 > crlnumber"
+  args:
+    chdir: "{{ openvpn_pki_dir }}"
+    creates: crlnumber
+  tags:
+    - openvpn_clients
+
+- name: Copy openssl config file
+  template:
+    src: "{{ role_path }}/files/etc/pki/openvpn/openssl.cnf.j2"
+    dest: "{{ openvpn_pki_dir }}/openssl.cnf"
+  tags:
+    - openvpn_clients
+
+- name: Ensure CA key exists
+  command: "openssl genrsa -out private/CA.key 4096"
+  args:
+    chdir: "{{ openvpn_pki_dir }}"
+    creates: private/CA.key
+  notify:
+    - Restart OpenVPN
+  tags:
+    - openvpn_clients
+
+- name: Ensure CA certificate exists
+  command: "openssl req -config openssl.cnf -key private/CA.key -new -x509 -days {{ openvpn_ca_days | int }} -sha256 -extensions v3_ca -out certs/CA.pem -subj '/CN={{ openvpn_ca_name }}'"
+  args:
+    chdir: "{{ openvpn_pki_dir }}"
+    creates: certs/CA.pem
+  notify:
+    - Restart OpenVPN
+  tags:
+    - openvpn_clients
+
+- block:
+
+    - name: Generate server private key
+      command: "openssl genrsa -out SRV.key 2048"
+      args:
+        chdir: "{{ openvpn_pki_dir }}/private"
+      notify:
+        - Restart OpenVPN
+
+    - name: Create sign request for server
+      command: "openssl req -config openssl.cnf -key private/SRV.key -new -sha256 -out csr/SRV.csr -subj '/OU={{ openvpn_server_name }} {{ ansible_date_time.iso8601 }}/CN={{ openvpn_server_name }}'"
+      args:
+        chdir: "{{ openvpn_pki_dir }}"
+
+    - name: Sign server certificate
+      command: "openssl ca -batch -config openssl.cnf -extensions server_cert -days {{ openvpn_c_days }} -notext -md sha256 -in csr/SRV.csr -out certs/SRV.pem"
+      args:
+        chdir: "{{ openvpn_pki_dir }}"
+      notify:
+        - Restart OpenVPN
+
+  when: openvpn_srv_issue == True
+  tags:
+    - openvpn_clients
+
+- name: Ensure dhparam exists
+  command: "openssl dhparam -out dhparam.pem 2048"
+  args:
+    chdir: "{{ openvpn_pki_dir }}"
+    creates: "dhparam.pem"
+  notify:
+    - Restart OpenVPN
+  tags:
+    - openvpn_clients
+
+- name: Issue client certificates
+  include_tasks: pki_issue_cert.yml
+  loop: "{{ openvpn_clients }}"
+  loop_control:
+    label: "{{ item.name }}"
+  tags:
+    - openvpn_clients
+
+- name: Revoke client certificates
+  include_tasks: pki_revoke_cert.yml
+  loop: "{{ openvpn_c_revoke }}"
+  tags:
+    - openvpn_clients
+
+- name: Ensure CRL exists
+  command: "openssl ca -batch -config openssl.cnf -gencrl -out crl/crl.pem"
+  args:
+    chdir: "{{ openvpn_pki_dir }}"
+    creates: "crl/crl.pem"
+  tags:
+    - openvpn_clients
+
+- name: Ensure correct permissions set for PKI directory
+  file:
+    path: "{{ openvpn_pki_dir }}"
+    owner: "{{ openvpn_user }}"
+    group: "{{ openvpn_group }}"
+    recurse: True
+  tags:
+    - openvpn_clients
+...
