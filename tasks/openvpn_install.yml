@@ -6,6 +6,10 @@
   tags:
     - openvpn_setup
 
+- name: Ensure group '{{ openvpn_group }}' exists
+  group:
+    name: "{{ openvpn_group }}"
+
 - name: Ensure user '{{ openvpn_user }}' exists
   user:
     name: "{{ openvpn_user }}"
