@@ -72,6 +72,7 @@
     name: "openvpn@{{ openvpn_server_name | replace(' ', '_') | lower }}"
     state: started
     enabled: True
+    daemon_reload: True
   tags:
     - openvpn_setup
 
